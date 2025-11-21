@@ -7,6 +7,11 @@
 
 #include "recordType.hpp"
 
+namespace Counts{
+    extern size_t totalReadCount, totalWriteCount;
+}
+
+
 class Tape {
 private:
     std::fstream file;

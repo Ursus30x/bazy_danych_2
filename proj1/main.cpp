@@ -10,7 +10,6 @@ int main(int argc, char* argv[]){
     int opt;
     int long_index = 0;
 
-    bool        verbose  = false;
     size_t      records  = 0;
     size_t      pageSize = 0;
     size_t      buffers  = 0;
@@ -23,31 +22,50 @@ int main(int argc, char* argv[]){
         {"pageSize",    required_argument,  0,  'p'},
         {"buffers",     required_argument,  0,  'b'},
         {"verbose",     no_argument,        0,  'v'},
+
         {0, 0, 0, 0}
     };
 
     while ((opt = getopt_long(argc, argv, "hr:p:b:v", long_opts, &long_index)) != -1) {
         switch (opt) {
             case 'h':   // Help
-                /// @todo write help for this program
-                break;
+                Logger::log("Usage: tape_sort [OPTIONS]\n"
+                           "Options:\n"
+                           "  -h, --help            Show this help message\n"
+                           "  -f, --file FILE       Specify input file (default: tape_data.bin)\n"
+                           "  -r, --records N       Generate N random records\n"
+                           "  -p, --pageSize N      Set page size in records (default: 100)\n"
+                           "  -b, --buffers N       Set number of buffers (default: 10)\n"
+                           "  -v, --verbose         Enable verbose output\n"
+                           "\n"
+                           "Either specify a file or generate random records, not both.\n"
+                           "If neither is specified, defaults to generating 1000 random records.\n");
+                return 0;
             //==============These are exclusive to eachother=============
             case 'f':   // Source file for data
                 filename = optarg;
-                /// @todo write function for data loading from a file
+                // Check if records was also specified
+                if (records != 0) {
+                    Logger::log("Error: Cannot specify both --file and --records\n");
+                    return 1;
+                }
                 break;
             case 'r':   // Amount of records to generate
                 records = std::stoi(optarg);
+                // Check if file was also specified
+                if (filename != DEFAULT_FILENAME) {
+                    Logger::log("Error: Cannot specify both --file and --records\n");
+                    return 1;
+                }
                 break;
             //===========================================================
             case 'p':   // Size of a single page in a file
-                pageSize = std::stoi(optarg);
+                pageSize = std::stoi(optarg)*sizeof(time_record_type);
                 break;
             case 'b':   // Amount of large buffers
                 buffers = std::stoi(optarg);
                 break;
             case 'v':   // Shows sorting steps and phases
-                verbose = true;
                 Logger::verbose = true;  // Set Logger's verbose flag too
                 break;
             default:
@@ -59,12 +77,22 @@ int main(int argc, char* argv[]){
                 "File sorting with large buffer merging\n"
                 "=========================================\n\n");
 
+    // Check if pageSize or buffers are not set
+    if (pageSize == 0) {
+        Logger::log("Error: pageSize must be specified\n");
+        return 1;
+    }
+    if (buffers == 0) {
+        Logger::log("Error: buffers must be specified\n");
+        return 1;
+    }
+
     Tape tape(filename, pageSize);
 
-    /// @todo WRITE ERRORS IF pageSize or buffers ARE NOT SET
-
+    // Check if filename and records are both specified
     if (filename != DEFAULT_FILENAME && records != 0) {
-        /// @todo FILENAME AND RECORDS ARE EXCLUSIVE ERROR
+        Logger::log("Error: Cannot specify both --file and --records\n");
+        return 1;
     } else if (filename != DEFAULT_FILENAME) {
         if (!tape.open(std::ios::in | std::ios::out)) {
             Logger::log("Failed to open tape file!\n");
@@ -72,7 +100,7 @@ int main(int argc, char* argv[]){
         }
         Logger::log("Successfully opened %s\n", filename.c_str());
     } else if (records != 0) {
-        Logger::log("Generating random tape...\n");
+        Logger::log("Generating random tape...\n\n");
         tape.generate_random_file(records);
 
         if (!tape.open(std::ios::in | std::ios::out)) {
@@ -80,7 +108,14 @@ int main(int argc, char* argv[]){
             return 1;
         }
     } else {
-        /// @todo FILENAME OR RECORDS OPTION IS REQUIRED ERROR
+        // Neither filename nor records specified - use default
+        Logger::log("No input specified, generating 1000 random records...\n\n");
+        tape.generate_random_file(1000);  // Use 1000 as default
+
+        if (!tape.open(std::ios::in | std::ios::out)) {
+            Logger::log("Failed to open tape file!\n");
+            return 1;
+        }
     }
 
     Logger::log("Initial tape content:\n");

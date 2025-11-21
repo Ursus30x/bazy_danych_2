@@ -1,4 +1,10 @@
 #include "tape.hpp"
+#include "logger.hpp"
+
+namespace Counts{
+    size_t totalReadCount = 0, totalWriteCount = 0;
+}
+
 
 Tape::Tape(const std::string& name, size_t block)
     : filename(name), readCount(0), writeCount(0), blockSize(block) {
@@ -26,6 +32,7 @@ void Tape::write_block(size_t blockNum, RecordType* records, size_t recordCount)
         file.write(reinterpret_cast<char*>(&value), sizeof(time_record_type));
     }
     writeCount++;
+    Counts::totalWriteCount++;
 }
 
 bool Tape::read_block(size_t blockNum, std::vector<RecordType>& buffer) {
@@ -43,13 +50,14 @@ bool Tape::read_block(size_t blockNum, std::vector<RecordType>& buffer) {
         if (value != 0) buffer.push_back(RecordType(value));
     }
     readCount++;
+    Counts::totalReadCount++;
     return true;
 }
 
 void Tape::generate_random_file(size_t records) {
     std::ofstream out(filename, std::ios::binary | std::ios::trunc);
     std::mt19937 rng(std::random_device{}());
-    std::uniform_int_distribution<time_record_type> dist(1, 20);
+    std::uniform_int_distribution<time_record_type> dist(1, 9);
 
     size_t fullBlocks = records / numOfRecordInBlock;
     size_t remainder = records % numOfRecordInBlock;
@@ -82,10 +90,10 @@ void Tape::display_block(size_t block) {
     for (size_t i = 0; i < numOfRecordInBlock; ++i) {
         time_record_type value;
         if (!in.read(reinterpret_cast<char*>(&value), sizeof(time_record_type))) break;
-        if (value == 0) std::cout << "_ ";
-        else std::cout << value << " ";
+        if (value == 0) Logger::log("_ ");
+        else Logger::log("%d ", value);
     }
-    std::cout << std::endl;
+    Logger::log("\n");
     in.close();
 }
 
@@ -94,14 +102,14 @@ void Tape::display() {
     time_record_type value;
     size_t count = 0;
 
-    std::cout << "| ";
+    Logger::log_verbose("| ");
     while (in.read(reinterpret_cast<char*>(&value), sizeof(time_record_type))) {
-        if (value == 0) std::cout << "_ ";
-        else std::cout << value << " ";
+        if (value == 0) Logger::log("_ ");
+        else Logger::log("%d ", value);
         count++;
-        if (count % numOfRecordInBlock == 0) std::cout << "| ";
+        if (count % numOfRecordInBlock == 0) Logger::log_verbose("| ");
     }
-    std::cout << std::endl;
+    Logger::log_verbose("\n");
     in.close();
 }
 
@@ -111,7 +119,6 @@ size_t Tape::get_total_blocks() {
     in.close();
     return fileSize / blockSize;
 }
-
 
 size_t Tape::get_read_count() const { return readCount; }
 size_t Tape::get_write_count() const { return writeCount; }

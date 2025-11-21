@@ -1,8 +1,10 @@
 #include "tapeSort.hpp"
 #include "tape.hpp"
 #include <algorithm>
-#include <iostream>
 #include <queue>
+#include "logger.hpp"
+
+size_t totalPhases = 0;
 
 void create_runs(Tape *tape, size_t bufferNumber) {
     if (!tape) return;
@@ -16,7 +18,9 @@ void create_runs(Tape *tape, size_t bufferNumber) {
     size_t currentBlock = 0;
     size_t runIndex = 0;
 
-    std::cout << "Runs created: " << std::endl;
+
+    Logger::log_verbose("Creating runs...\n");
+
     while (currentBlock < totalBlocks) {
         buffer.clear();
 
@@ -46,32 +50,32 @@ void create_runs(Tape *tape, size_t bufferNumber) {
             tape->write_block(runIndex * bufferNumber + b, ptr + offset, count);
         }
 
-        std::cout << "| ";
+        Logger::log_verbose("| ");
         for(RecordType record : buffer){
-            std::cout << record.get_timestamp() << " ";
+            Logger::log_verbose("%d ", record.get_timestamp());
         }
+        Logger::log_verbose("|\n");
 
         runIndex++;
     }
 
-    std::cout << "|" << std::endl;
 }
 
 void merge(Tape* tape, size_t bufferNumber) {
     if (bufferNumber < 2) {
-        std::cout << "Need at least 2 buffers for merging" << std::endl;
+        Logger::log("Need at least 2 buffers for merging\n");
         return;
     }
 
     size_t totalBlocks = tape->get_total_blocks();
     size_t recordsPerBlock = tape->get_num_of_record_in_block();
     size_t initialRunSize = bufferNumber; // in blocks
-    
+
     // Calculate number of initial runs
     size_t numRuns = (totalBlocks + initialRunSize - 1) / initialRunSize;
-    
+
     if (numRuns <= 1) {
-        std::cout << "File already sorted (only 1 run exists)" << std::endl;
+        Logger::log_verbose("File already sorted (only 1 run exists)\n");
         return;
     }
 
@@ -81,14 +85,14 @@ void merge(Tape* tape, size_t bufferNumber) {
 
     // Create temporary tape for output
     Tape* outputTape = new Tape("temp_merge.bin", tape->get_block_size());
-    
+
     while (numRuns > 1) {
-        std::cout << "\n========== Merge Cycle " << cycle << " ==========" << std::endl;
-        std::cout << "Merging " << numRuns << " runs of size " 
-                  << currentRunSize << " blocks" << std::endl;
+        Logger::log_verbose("\n========== Merge Cycle %d ==========\n", cycle);
+        Logger::log_verbose("Merging %zu runs of size %zu blocks\n",
+                    numRuns, currentRunSize);
 
         if (!outputTape->open(std::ios::in | std::ios::out | std::ios::trunc)) {
-            std::cerr << "Failed to open output tape!" << std::endl;
+            Logger::log("Failed to open output tape!\n");
             delete outputTape;
             return;
         }
@@ -100,10 +104,10 @@ void merge(Tape* tape, size_t bufferNumber) {
         // Process runs in groups of mergeWays
         while (runsProcessed < numRuns) {
             size_t runsInThisGroup = std::min(mergeWays, numRuns - runsProcessed);
-            
-            std::cout << "\nMerging runs " << runsProcessed << " to " 
-                      << (runsProcessed + runsInThisGroup - 1) << ": ";
-            
+
+            Logger::log_verbose("\nMerging runs %zu to %zu: ", runsProcessed,
+                        runsProcessed + runsInThisGroup - 1);
+
             // Structure to track each input run
             struct RunInfo {
                 size_t runIndex;
@@ -115,7 +119,7 @@ void merge(Tape* tape, size_t bufferNumber) {
             };
 
             std::vector<RunInfo> runs(runsInThisGroup);
-            
+
             // Initialize run information
             for (size_t i = 0; i < runsInThisGroup; ++i) {
                 runs[i].runIndex = runsProcessed + i;
@@ -123,7 +127,7 @@ void merge(Tape* tape, size_t bufferNumber) {
                 runs[i].endBlock = std::min(runs[i].startBlock + currentRunSize, totalBlocks);
                 runs[i].currentBlock = runs[i].startBlock;
                 runs[i].bufferPos = 0;
-                
+
                 // Load first block of this run
                 tape->read_block(runs[i].currentBlock, runs[i].buffer);
                 runs[i].currentBlock++;
@@ -133,10 +137,10 @@ void merge(Tape* tape, size_t bufferNumber) {
             auto cmp = [](const std::pair<RecordType, size_t>& a, const std::pair<RecordType, size_t>& b) {
                 return a.first.get_timestamp() > b.first.get_timestamp();
             };
+            
             std::priority_queue<std::pair<RecordType, size_t>, 
                               std::vector<std::pair<RecordType, size_t>>, 
                               decltype(cmp)> minHeap(cmp);
-
             // Initialize heap with first record from each run
             for (size_t i = 0; i < runsInThisGroup; ++i) {
                 if (!runs[i].buffer.empty()) {
@@ -188,17 +192,17 @@ void merge(Tape* tape, size_t bufferNumber) {
             }
 
             // Display the merged run
-            std::cout << "| ";
+            Logger::log_verbose("| ");
             for (const auto& record : mergedRun) {
-                std::cout << record.get_timestamp() << " ";
+                Logger::log_verbose("%d ", record.get_timestamp());
             }
-            std::cout << "|";
+            Logger::log_verbose("|");
 
             runsProcessed += runsInThisGroup;
             newRunCount++;
         }
 
-        std::cout << "\n" << std::endl;
+        Logger::log_verbose("\n\n");
 
         outputTape->close();
 
@@ -206,32 +210,41 @@ void merge(Tape* tape, size_t bufferNumber) {
         tape->close();
         std::remove(tape->get_filename().c_str());
         std::rename("temp_merge.bin", tape->get_filename().c_str());
-        
+
         if (!tape->open(std::ios::in | std::ios::out)) {
-            std::cerr << "Failed to reopen tape!" << std::endl;
+            Logger::log("Failed to reopen tape!\n");
             delete outputTape;
             return;
         }
 
         // Display complete state after this cycle
-        std::cout << "After Cycle " << cycle << " - " << newRunCount << " runs:" << std::endl;
-        tape->display();
+        Logger::log_verbose("After Cycle %d - %zu runs:\n", cycle, newRunCount);
+        if(Logger::verbose)tape->display();
 
         // Update for next cycle
         totalBlocks = tape->get_total_blocks();
         currentRunSize *= mergeWays;
         numRuns = newRunCount;
         cycle++;
+        totalPhases++;
     }
 
     delete outputTape;
-    std::cout << "\n========================================" << std::endl;
-    std::cout << "Merge complete! File is now sorted." << std::endl;
-    std::cout << "========================================" << std::endl;
+    
+    Logger::log("\n========================================\n");
+    Logger::log("Merge complete! File is now sorted.\n");
+    Logger::log("========================================\n\n");
 }
 
 void sort_tape(Tape *tape, size_t bufferNumber) {
-    std::cout << "Creating runs...\n";
+
     create_runs(tape, bufferNumber);
     merge(tape, bufferNumber);
+    Logger::log("Sorted file contents:\n");
+    tape->display();
+
+    Logger::log_verbose("\nStats:\n");
+    Logger::log_verbose("Total merge cycles %ld\n", totalPhases);
+    Logger::log_verbose("Total read count %ld\n", Counts::totalReadCount);
+    Logger::log_verbose("Total write count %ld\n", Counts::totalWriteCount);
 }
