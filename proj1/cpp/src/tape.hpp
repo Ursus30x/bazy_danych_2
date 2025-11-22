@@ -31,6 +31,8 @@ public:
     bool read_block(size_t blockNum, std::vector<RecordType>& buffer);
 
     void generate_random_file(size_t records);
+    void load_txt_file(const std::string& name);
+    void load_records_from_keyboard();
 
     void display_block(size_t block);
     void display();

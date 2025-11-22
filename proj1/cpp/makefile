@@ -1,7 +1,7 @@
 CXX = g++
 CXXFLAGS = -Wall -Wextra -O2 -std=c++17
-TARGET = tape_demo
-SRC = main.cpp tapeSort.cpp tape.cpp logger.cpp recordType.cpp
+TARGET = tape_sorting
+SRC := $(wildcard src/*.cpp)
 OBJ = $(SRC:.cpp=.o)
 
 all: $(TARGET)

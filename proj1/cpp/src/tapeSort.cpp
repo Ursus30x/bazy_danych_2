@@ -4,7 +4,7 @@
 #include <queue>
 #include "logger.hpp"
 
-size_t totalPhases = 0;
+size_t totalCycles = 0;
 
 void create_runs(Tape *tape, size_t bufferNumber) {
     if (!tape) return;
@@ -20,6 +20,11 @@ void create_runs(Tape *tape, size_t bufferNumber) {
 
 
     Logger::log_verbose("Creating runs...\n");
+
+    if (!tape->open(std::ios::in | std::ios::out)) {
+            Logger::log("Failed to open tape file!\n");
+            return;
+    }
 
     while (currentBlock < totalBlocks) {
         buffer.clear();
@@ -58,10 +63,18 @@ void create_runs(Tape *tape, size_t bufferNumber) {
 
         runIndex++;
     }
+    Logger::log_verbose("\n");
 
+    tape->close();
 }
 
 void merge(Tape* tape, size_t bufferNumber) {
+    if (!tape->open(std::ios::in | std::ios::out)) {
+            Logger::log("Failed to reopen tape!\n");
+            return;
+    }
+
+
     if (bufferNumber < 2) {
         Logger::log("Need at least 2 buffers for merging\n");
         return;
@@ -75,7 +88,7 @@ void merge(Tape* tape, size_t bufferNumber) {
     size_t numRuns = (totalBlocks + initialRunSize - 1) / initialRunSize;
 
     if (numRuns <= 1) {
-        Logger::log_verbose("File already sorted (only 1 run exists)\n");
+        Logger::log_verbose("File already sorted (only 1 run exists)\n\n");
         return;
     }
 
@@ -226,7 +239,7 @@ void merge(Tape* tape, size_t bufferNumber) {
         currentRunSize *= mergeWays;
         numRuns = newRunCount;
         cycle++;
-        totalPhases++;
+        totalCycles++;
     }
 
     delete outputTape;
@@ -244,7 +257,7 @@ void sort_tape(Tape *tape, size_t bufferNumber) {
     tape->display();
 
     Logger::log_verbose("\nStats:\n");
-    Logger::log_verbose("Total merge cycles %ld\n", totalPhases);
-    Logger::log_verbose("Total read count %ld\n", Counts::totalReadCount);
-    Logger::log_verbose("Total write count %ld\n", Counts::totalWriteCount);
+    Logger::log_verbose("Total merge cycles %ld\n", totalCycles);
+    Logger::log_verbose("Total read count %ld\n",   Counts::totalReadCount);
+    Logger::log_verbose("Total write count %ld\n",  Counts::totalWriteCount);
 }
