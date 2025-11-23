@@ -9,3 +9,12 @@
 *.bin
 *.o
 *.txt
+*.pdf
+*.log
+*.fls
+*.synctex.gz
+*.fdb_latexmk
+*.aux
+*.out
+
+charts

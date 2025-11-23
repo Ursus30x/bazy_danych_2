@@ -4,7 +4,7 @@
 #include <queue>
 #include "logger.hpp"
 
-size_t totalCycles = 0;
+size_t totalPhases = 0;
 
 void create_runs(Tape *tape, size_t bufferNumber) {
     if (!tape) return;
@@ -94,13 +94,13 @@ void merge(Tape* tape, size_t bufferNumber) {
 
     size_t mergeWays = bufferNumber - 1; // n-1 input buffers, 1 output buffer
     size_t currentRunSize = initialRunSize;
-    int cycle = 1;
+    int phase = 1;
 
     // Create temporary tape for output
     Tape* outputTape = new Tape("temp_merge.bin", tape->get_block_size());
 
     while (numRuns > 1) {
-        Logger::log_verbose("\n========== Merge Cycle %d ==========\n", cycle);
+        Logger::log_verbose("\n========== Merge Phase %d ==========\n", phase);
         Logger::log_verbose("Merging %zu runs of size %zu blocks\n",
                     numRuns, currentRunSize);
 
@@ -230,16 +230,16 @@ void merge(Tape* tape, size_t bufferNumber) {
             return;
         }
 
-        // Display complete state after this cycle
-        Logger::log_verbose("After Cycle %d - %zu runs:\n", cycle, newRunCount);
+        // Display complete state after this phase
+        Logger::log_verbose("After phase %d - %zu runs:\n", phase, newRunCount);
         if(Logger::verbose)tape->display();
 
-        // Update for next cycle
+        // Update for next phase
         totalBlocks = tape->get_total_blocks();
         currentRunSize *= mergeWays;
         numRuns = newRunCount;
-        cycle++;
-        totalCycles++;
+        phase++;
+        totalPhases++;
     }
 
     delete outputTape;
@@ -257,7 +257,7 @@ void sort_tape(Tape *tape, size_t bufferNumber) {
     tape->display();
 
     Logger::log_verbose("\nStats:\n");
-    Logger::log_verbose("Total merge cycles %ld\n", totalCycles);
+    Logger::log_verbose("Total merge phases %ld\n", totalPhases);
     Logger::log_verbose("Total read count %ld\n",   Counts::totalReadCount);
     Logger::log_verbose("Total write count %ld\n",  Counts::totalWriteCount);
 }
