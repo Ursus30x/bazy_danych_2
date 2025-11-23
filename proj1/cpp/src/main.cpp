@@ -30,7 +30,7 @@ int main(int argc, char* argv[]){
         {0, 0, 0, 0}
     };
 
-    while ((opt = getopt_long(argc, argv, "hr:p:b:vl:k", long_opts, &long_index)) != -1) {
+    while ((opt = getopt_long(argc, argv, "hf:r:p:b:vl:k", long_opts, &long_index)) != -1) {
         switch (opt) {
             case 'h':   // Help
                 Logger::log("Usage: tape_sort [OPTIONS]\n"

@@ -185,7 +185,7 @@ void Tape::load_records_from_keyboard() {
                     time_record_type value = std::stoul(token);
                     records.push_back(value);
                 } catch (const std::exception&) {
-                    Logger::log("Invalid input: %s\n", token.c_str());
+                    if(token.c_str()[0] != ';')Logger::log("Invalid input: %s\n", token.c_str());
                 }
             }
         }
