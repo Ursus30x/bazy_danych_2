@@ -2,7 +2,7 @@
 
 # Define the parameter sets
 RECORD_NUMS=(100 200 400 800 1600 3200 6400 12800) 
-BUFFER_NUMS=(4 16 64)
+BUFFER_NUMS=(4 16)
 
 # Create output file
 OUTPUT_FILE="sorting_results.txt"

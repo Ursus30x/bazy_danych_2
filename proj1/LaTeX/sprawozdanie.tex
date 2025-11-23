@@ -221,7 +221,7 @@ Warto zauważyć, że liczba operacji odczytu i zapisu jest zawsze identyczna, c
 
 \subsubsection{Zależność od wielkości bufora}
 
-Wykresy na rysunkach~\ref{fig:cycles_4} i~\ref{fig:cycles_16} przedstawiają zależność liczby faz scalania od liczby rekordów dla różnych wielkości buforów. Obserwacje te potwierdzają teoretyczną złożoność algorytmu:
+Wykresy na rysunkach~\ref{fig:phases_4} i~\ref{fig:phases_16} przedstawiają zależność liczby faz scalania od liczby rekordów dla różnych wielkości buforów. Obserwacje te potwierdzają teoretyczną złożoność algorytmu:
 
 \begin{itemize}
     \item Dla bufora 4~bloki liczba faz rośnie zgodnie z~zależnością $\lceil \log_3(r) \rceil$, gdzie $r$ to liczba początkowych runów, a~podstawa logarytmu wynika z~liczby scalanych runów jednocześnie $(n-1=3)$.
@@ -231,16 +231,16 @@ Wykresy na rysunkach~\ref{fig:cycles_4} i~\ref{fig:cycles_16} przedstawiają zal
 
 \begin{figure}[htbp]
 \centering
-\includegraphics[width=0.75\linewidth]{../charts/cycles_vs_records_buffer_4.png}
+\includegraphics[width=0.75\linewidth]{../charts/phases_vs_records_buffer_4.png}
 \caption{Liczba faz scalania w~funkcji liczby rekordów dla bufora 4~bloki. Widoczny jest logarytmiczny charakter wzrostu.}
-\label{fig:cycles_4}
+\label{fig:phases_4}
 \end{figure}
 
 \begin{figure}[htbp]
 \centering
-\includegraphics[width=0.75\linewidth]{../charts/cycles_vs_records_buffer_16.png}
+\includegraphics[width=0.75\linewidth]{../charts/phases_vs_records_buffer_16.png}
 \caption{Liczba faz scalania w~funkcji liczby rekordów dla bufora 16~bloków. Znacząco mniejsza liczba faz w~porównaniu do bufora 4~bloki.}
-\label{fig:cycles_16}
+\label{fig:phases_16}
 \end{figure}
 
 \subsubsection{Interpretacja wyników}
