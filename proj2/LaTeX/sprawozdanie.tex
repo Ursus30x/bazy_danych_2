@@ -40,6 +40,67 @@ Projekt składa się z trzech głównych modułów:
     \item \textbf{Eksperymenty (Bash/Python)} -- automatyzacja testów i wizualizacja wyników.
 \end{itemize}
 
+\section{Analiza Teoretyczna}
+
+Złożoność operacji w strukturze ISAM zależy od rozmiaru zbioru danych oraz przyjętych parametrów konfiguracyjnych. Poniżej przedstawiono teoretyczne modele kosztowe dla kluczowych operacji, oparte na modelu przedstawionym na wykładzie.
+
+\subsection{Parametry struktury}
+
+Przyjmijmy następujące oznaczenia:
+\begin{itemize}
+    \item $N$ -- liczba rekordów w obszarze głównym,
+    \item $V$ -- liczba rekordów w obszarze nadmiarowym (Overflow),
+    \item $b$ -- współczynnik blokowania dla pliku z danymi (liczba rekordów na stronę), w projekcie $b=4$,
+    \item $b_i$ -- współczynnik blokowania dla pliku indeksu (liczba wpisów na stronę), w implementacji $b_i = 128$,
+    \item $\alpha$ -- współczynnik wypełnienia strony głównej po reorganizacji.
+\end{itemize}
+
+Rozmiar obszaru głównego (w stronach) wynosi:
+\begin{equation}
+S_N = \left\lceil \frac{N}{b \cdot \alpha} \right\rceil
+\end{equation}
+
+Rozmiar pliku indeksu (w stronach):
+\begin{equation}
+Sl_N = \left\lceil \frac{S_N}{b_i} \right\rceil
+\end{equation}
+
+\subsection{Koszt operacji wyszukiwania ($T_F$)}
+
+Koszt wyszukania rekordu składa się z kosztu przeszukania indeksu oraz kosztu dostępu do danych. 
+
+W standardowym modelu teoretycznym (zakładającym przeszukiwanie binarne indeksu lub indeks w pamięci RAM):
+\begin{equation}
+T_F \approx \log_2(Sl_N) + 1 + \frac{V}{2 \cdot S_N}
+\end{equation}
+gdzie składnik $\frac{V}{2 \cdot S_N}$ reprezentuje średnią liczbę odczytów w łańcuchu Overflow (przyjmując jednostajny rozkład nadmiarów).
+
+\textbf{Uwaga implementacyjna:} W zrealizowanym projekcie, zgodnie z założeniami symulacji, plik indeksu jest wczytywany w całości sekwencyjnie przy każdej operacji wymagającej lokalizacji strony. Zatem w naszym przypadku koszt ten wynosi:
+\begin{equation}
+T_{F\_sym} = Sl_N + 1 + \text{DługośćŁańcuchaOverflow}
+\end{equation}
+Jest to koszt pesymistyczny, ale pozwala dokładnie zmierzyć narzut operacji I/O.
+
+\subsection{Koszt operacji wstawiania ($T_I$)}
+
+Wstawienie rekordu wymaga najpierw jego wyszukania (aby sprawdzić duplikaty i znaleźć miejsce), a następnie zapisu.
+\begin{itemize}
+    \item Bez Overflow: $T_I = T_F + 1$ (odczyt strony + zapis zmodyfikowanej strony).
+    \item Z Overflow: $T_I \approx T_F + 2$ (odczyt + zapis nowego rekordu w Overflow + aktualizacja wskaźnika).
+\end{itemize}
+W naszej implementacji, ze względu na konieczność dwukrotnego przeszukania indeksu (raz dla sprawdzenia duplikatu, drugi raz dla ustalenia strony zapisu), koszt ten jest wyższy:
+\begin{equation}
+T_{I\_sym} \approx 2 \cdot Sl_N + 2 + \text{KosztOverflow}
+\end{equation}
+
+\subsection{Koszt reorganizacji ($T_R$)}
+
+Reorganizacja wymaga jednokrotnego odczytania wszystkich rekordów (ze starego pliku głównego i overflow) oraz zapisania ich do nowych struktur.
+\begin{equation}
+T_R = (S_{N\_old} + V) + (S_{N\_new} + Sl_{N\_new})
+\end{equation}
+gdzie pierwszy nawias to koszt odczytu (zakładając pesymistycznie, że każdy rekord overflow to osobny odczyt), a drugi to koszt zapisu nowych, uporządkowanych struktur.
+
 \section{Implementacja}
 
 Struktura danych została zrealizowana w oparciu o trzy logiczne i fizyczne pliki:
@@ -74,7 +135,6 @@ Proces reorganizacji jest kluczowy dla utrzymania wydajności ISAM. Przebiega on
 \end{enumerate}
 
 Reorganizacja może być wywołana ręcznie lub automatycznie, gdy stosunek rekordów w Overflow do rekordów w Primary przekroczy zadany próg (\texttt{Threshold}).
-
 \section{Opis eksperymentu}
 
 Celem eksperymentu było zbadanie wpływu dwóch kluczowych parametrów na wydajność bazy danych:
@@ -110,7 +170,6 @@ Wykres na Rysunku~\ref{fig:reorgs} przedstawia zależność liczby reorganizacji
     \item Dla $\alpha=0.9$ (linia pomarańczowa) liczba reorganizacji jest drastycznie wyższa niż dla $\alpha=0.5$. Wynika to z faktu, że pozostawienie tylko 10\% wolnego miejsca na stronie powoduje bardzo szybkie jej przepełnienie przy wstawianiu nowych danych.
     \item Niski Threshold (np. 0.05) wymusza niemal ciągłe reorganizacje, co jest bardzo kosztowne.
 \end{itemize}
-
 \subsection{Koszt zapisu (Writes)}
 
 Rysunek~\ref{fig:writes} obrazuje całkowitą liczbę operacji zapisu na dysk. Jest to bezpośrednio skorelowane z liczbą reorganizacji, ponieważ każda reorganizacja wymaga przepisania całej bazy danych.
@@ -122,39 +181,67 @@ Rysunek~\ref{fig:writes} obrazuje całkowitą liczbę operacji zapisu na dysk. J
 \label{fig:writes}
 \end{figure}
 
-Widać wyraźnie, że dla $\alpha=0.9$ i niskiego progu reorganizacji koszt zapisu jest ogromny (ponad 15~000 operacji). Zwiększenie progu reorganizacji pozwala znacząco zredukować obciążenie dysku zapisami.
-
+Analiza wykresu pozwala na sformułowanie następujących wniosków:
+\begin{itemize}
+    \item Dla $\alpha=0.9$ i niskiego progu reorganizacji (częste sprzątanie) koszt zapisu jest ogromny (ponad 15~000 operacji). Zwiększenie progu reorganizacji pozwala znacząco zredukować to obciążenie.
+    \item \textbf{Anomalia dla $\alpha=0.5$ przy Threshold 0.8:} Obserwujemy tu lokalny wzrost liczby zapisów (pik na niebieskiej linii), mimo mniejszej liczby reorganizacji. Wynika to z niefortunnego momentu wystąpienia ostatniej reorganizacji. Przy Threshold 0.8 następuje ona nieco wcześniej niż przy 1.0, przez co utworzony bufor pustych miejsc na stronach wyczerpuje się tuż przed końcem eksperymentu. Wymusza to wstawianie ostatnich kilkuset rekordów do obszaru Overflow, co wiąże się z podwójnym kosztem zapisu (rekord + aktualizacja wskaźnika), w przeciwieństwie do taniego wstawiania na stronę główną przy Threshold 1.0.
+\end{itemize}
 \subsection{Analiza Trade-off (Odczyty)}
 
-Najciekawszych wniosków dostarcza analiza odczytów przedstawiona na Rysunku~\ref{fig:reads_tradeoff}. Wykres ten rozbija całkowity koszt odczytów na:
+Najciekawszych wniosków dostarcza porównanie charakterystyk odczytu dla obu badanych wartości współczynnika $\alpha$. Wykresy te rozbijają całkowity koszt odczytów na:
 \begin{itemize}
     \item \textbf{Maintenance (czerwona linia)} -- odczyty zużyte na proces reorganizacji.
     \item \textbf{Operational (zielona linia)} -- odczyty zużyte na właściwe wyszukiwanie i wstawianie rekordów.
 \end{itemize}
 
+\subsubsection{Przypadek $\alpha=0.9$ (Ciasne upakowanie)}
+
 \begin{figure}[H]
 \centering
 \includegraphics[width=0.85\linewidth]{../charts/reads_tradeoff_alpha_0_9.png}
-\caption{Analiza składowych kosztu odczytu dla $\alpha=0.9$. Widoczny kompromis między kosztem utrzymania a kosztem operacyjnym.}
-\label{fig:reads_tradeoff}
+\caption{Analiza składowych kosztu odczytu dla $\alpha=0.9$. Widoczny wyraźny kompromis (trade-off).}
+\label{fig:reads_tradeoff_09}
 \end{figure}
 
-\textbf{Analiza:}
+Dla wysokiego współczynnika wypełnienia (Rysunek~\ref{fig:reads_tradeoff_09}) obserwujemy klasyczny trade-off:
 \begin{itemize}
     \item Wraz ze wzrostem Threshold spada koszt utrzymania (rzadsze reorganizacje).
-    \item Jednakże, na prawym krańcu wykresu (Threshold > 0.8) widzimy, że linia zielona (koszt operacyjny) zaczyna rosnąć. Dzieje się tak, ponieważ rzadkie sprzątanie powoduje wydłużanie się łańcuchów w obszarze Overflow.
-    \item Każde wyszukiwanie rekordu w długim łańcuchu Overflow wymaga wielu odczytów dyskowych, co negatywnie wpływa na wydajność bieżącą bazy.
+    \item Jednakże, dla wysokich progów (Threshold > 0.8) linia zielona (koszt operacyjny) zaczyna rosnąć. Dzieje się tak, ponieważ rzadkie sprzątanie przy braku miejsca na stronach głównych powoduje gwałtowne wydłużanie się łańcuchów Overflow.
+    \item Istnieje wyraźne optimum (ok. Threshold 0.8), gdzie suma kosztów jest najniższa.
+\end{itemize}
+
+\subsubsection{Przypadek $\alpha=0.5$ (Efekt bufora)}
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.85\linewidth]{../charts/reads_tradeoff_alpha_0_5.png}
+\caption{Analiza składowych kosztu odczytu dla $\alpha=0.5$. Wykres jest płaski, co świadczy o stabilności struktury.}
+\label{fig:reads_tradeoff_05}
+\end{figure}
+
+Dla niskiego współczynnika wypełnienia (Rysunek~\ref{fig:reads_tradeoff_05}) wykres jest niemal płaski.
+\begin{itemize}
+    \item \textbf{Efekt bufora:} Pozostawienie 50\% wolnego miejsca na stronach głównych po reorganizacji działa jak „poduszka bezpieczeństwa”.
+    \item Nowe rekordy w większości trafiają w puste miejsca na stronach głównych, zamiast tworzyć łańcuchy Overflow. Dzięki temu struktura jest odporna na degradację wydajności (koszt operacyjny nie rośnie znacząco), nawet przy rzadkich reorganizacjach.
+    \item Wartość Threshold ma w tym przypadku marginalne znaczenie dla wydajności odczytu.
 \end{itemize}
 
 \section{Wnioski końcowe}
 
-Przeprowadzone eksperymenty potwierdziły teoretyczne założenia metody ISAM.
+Przeprowadzone eksperymenty potwierdziły teoretyczne założenia metody ISAM oraz ujawniły kluczowy kompromis czas-przestrzeń (Space-Time Tradeoff).
+
 \begin{enumerate}
-    \item Istnieje silna zależność między współczynnikiem wypełnienia $\alpha$ a wydajnością. Wartość $\alpha=0.9$ oszczędza miejsce na dysku (czego nie mierzono wprost, ale wynika z teorii), ale generuje bardzo duży narzut operacji I/O związany z częstymi reorganizacjami. Wartość $\alpha=0.5$ jest bezpieczniejszym wyborem dla dynamicznie zmieniających się danych.
-    \item "Zbyt gorliwe" sprzątanie (niski Threshold) jest nieopłacalne. Koszt ciągłego przepisywania pliku przewyższa zyski z idealnego uporządkowania danych.
-    \item Istnieje optimum progu reorganizacji (w badanym przypadku ok. 0.6--0.8), gdzie suma kosztów utrzymania i kosztów operacyjnych jest najniższa. Przekroczenie tego progu powoduje degradację wydajności wyszukiwania z powodu zbyt długich łańcuchów w obszarze nadmiarowym.
+    \item \textbf{Wpływ parametru Alpha:} 
+    \begin{itemize}
+        \item Wartość $\alpha=0.9$ oszczędza miejsce na dysku ($S_N \approx N/3.6$), ale czyni strukturę bardzo wrażliwą na przyrost danych. Wymaga precyzyjnego doboru progu reorganizacji, aby uniknąć degradacji wydajności.
+        \item Wartość $\alpha=0.5$ marnuje znaczną część przestrzeni dyskowej ($S_N \approx N/2$), ale zapewnia wysoką stabilność wydajności. Wolne miejsce na stronach absorbuje nowe rekordy, minimalizując potrzebę korzystania z obszaru Overflow i częstych reorganizacji.
+    \end{itemize}
+    
+    \item \textbf{Optymalizacja reorganizacji:} Dla wysokich wartości $\alpha$, "zbyt gorliwe" sprzątanie (niski Threshold) jest nieopłacalne ekonomicznie -- koszt ciągłego przepisywania pliku przewyższa zyski z idealnego uporządkowania. Z kolei całkowity brak sprzątania (zbyt wysoki Threshold) prowadzi do wydłużenia czasu wyszukiwania.
+    
+    \item \textbf{Rekomendacja:} W systemach, gdzie priorytetem jest stabilność i szybkość działania, a przestrzeń dyskowa jest tania, zaleca się stosowanie niższego współczynnika $\alpha$ (np. 0.5). Pozwala to uniezależnić wydajność systemu od częstotliwości procesów konserwacyjnych.
 \end{enumerate}
 
-Implementacja poprawnie realizuje mechanizmy ISAM, w tym obsługę indeksu rzadkiego oraz łańcuchów przepełnień, co potwierdzają wyniki testów i zgodność charakterystyk z modelem teoretycznym.
+Implementacja poprawnie realizuje mechanizmy ISAM, co potwierdzają wyniki testów: rosnące koszty operacyjne przy zaniedbaniu reorganizacji dla ciasno upakowanych danych oraz stabilność kosztów przy zastosowaniu odpowiednich buforów na stronach.
 
 \end{document}

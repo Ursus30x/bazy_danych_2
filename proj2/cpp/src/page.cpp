@@ -2,22 +2,17 @@
 #include <iostream>
 #include <algorithm>
 
-// Implementacja funkcji pomocniczej
 size_t getPageOnDiskSize() {
-    // Rozmiar nagłówków (count + ptr) + miejsce na rekordy
     return sizeof(int) + sizeof(int32_t) + (RECORDS_PER_PAGE * sizeof(Record));
 }
 
 Page::Page() : recordCount(0), overflowPointer(NULL_POINTER) {
-    // Rezerwujemy miejsce i wypełniamy domyślnymi rekordami
-    // Dzięki temu wektor ma zawsze stały rozmiar logiczny, co ułatwia zapis na dysk
     records.resize(RECORDS_PER_PAGE);
 }
 
 bool Page::insertRecord(const Record& rec) {
     if (recordCount >= RECORDS_PER_PAGE) return false;
 
-    // Znajdź miejsce do wstawienia (insertion sort logic)
     int i = recordCount - 1;
     while (i >= 0 && records[i].key > rec.key) {
         records[i + 1] = records[i];

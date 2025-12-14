@@ -4,7 +4,7 @@
 #include <iostream>
 #include <algorithm>
 #include <vector>
-#include <cstdio> // remove, rename
+#include <cstdio>
 
 ISAM::ISAM(std::string prefix, double alphaVal, double reorgThresh) 
     : filenamePrefix(prefix), alpha(alphaVal), reorgThreshold(reorgThresh) {
@@ -55,7 +55,7 @@ void ISAM::clearDatabase() {
     initStructure();
 }
 
-// === OBSŁUGA INDEKSU (POPRAWIONA - STRONICOWANIE) ===
+// === OBSŁUGA INDEKSU ===
 
 void ISAM::saveIndex(const std::vector<IndexEntry>& index) {
     indexFile->clear();
@@ -94,8 +94,6 @@ std::vector<IndexEntry> ISAM::loadIndex() {
 }
 
 int ISAM::findPrimaryPageIndex(uint32_t key) {
-    // W tej symulacji wczytujemy cały indeks do RAM (zgodnie z FAQ)
-    // ale robimy to stronami przez DiskManager (również zgodnie z FAQ)
     std::vector<IndexEntry> index = loadIndex();
     
     if (index.empty()) return 0;
@@ -254,8 +252,6 @@ void ISAM::reorganize() {
     Logger::log("\n=== Reorganization (Alpha: %.2f) ===\n", alpha);
     Stats::totalReorgs++; 
 
-    // --- POMIAR KOSZTU REORGANIZACJI (START) ---
-    // Zapamiętujemy stan liczników przed rozpoczęciem "sprzątania"
     int readsStart = DiskManager::diskReads;
     int writesStart = DiskManager::diskWrites;
 
@@ -296,7 +292,6 @@ void ISAM::reorganize() {
             ovPtr = ovRec.nextPointer;
         }
 
-        // WAŻNE: Sortowanie, aby zachować porządek w nowym pliku
         std::sort(recordsToProcess.begin(), recordsToProcess.end());
 
         // Wstawianie do nowej struktury
@@ -352,6 +347,7 @@ void ISAM::reorganize() {
     Stats::totalReorgWrites += (long long)(writesEnd - writesStart);
     
     Logger::log("Reorg complete. Pages: %d. Overflow cleared.\n", newPageIndex + 1);
+    Logger::log("R=%d W=%d",readsEnd - readsStart, writesEnd - writesStart);
 }
 
 void ISAM::display() {

@@ -4,23 +4,21 @@
 #include <iostream>
 #include <cstdint>
 
-// Stała oznaczająca brak wskaźnika (NULL pointer w pliku)
 const int32_t NULL_POINTER = -1;
 
 class Record {
 public:
-    uint32_t key;           // Klucz główny (do sortowania)
-    uint32_t timestamp;     // Dane (z zadania 1)
-    int32_t  nextPointer;   // Wskaźnik do Overflow Area (offset/indeks rekordu)
-    bool     isDeleted;     // Flaga usunięcia
+    uint32_t key;        
+    uint32_t timestamp;   
+    int32_t  nextPointer;  
+    bool     isDeleted;     
 
     Record();
     Record(uint32_t k, uint32_t t);
 
-    // Gettery/Settery (opcjonalne, skoro pola są publiczne dla ułatwienia operacji dyskowych)
+
     std::string toString() const;
 
-    // Operatory porównania oparte na KLUCZU (zgodnie z instrukcją Zad 2)
     bool operator<(const Record& other) const;
     bool operator>(const Record& other) const;
     bool operator==(const Record& other) const;

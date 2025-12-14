@@ -6,7 +6,6 @@
 #include "record.hpp"
 
 // Struktura wpisu w indeksie (Klucz -> Numer Strony)
-// Przeniesiona tutaj, aby DiskManager mógł z niej korzystać
 struct IndexEntry {
     uint32_t key;
     int pageIndex;
