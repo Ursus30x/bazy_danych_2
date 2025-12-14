@@ -6,26 +6,19 @@
 #include <cstdio> // remove, rename
 
 // ==========================================
-// Konstruktor / Destruktor
+// Konstruktor / Destruktor / Init
 // ==========================================
 
-ISAM::ISAM(std::string prefix, double alphaVal) 
-    : filenamePrefix(prefix), alpha(alphaVal) {
+ISAM::ISAM(std::string prefix, double alphaVal, double reorgThresh) 
+    : filenamePrefix(prefix), alpha(alphaVal), reorgThreshold(reorgThresh) {
     
     primaryFile = new DiskManager(prefix + "_primary.bin");
     overflowFile = new DiskManager(prefix + "_overflow.bin");
     indexFile = new DiskManager(prefix + "_index.bin");
 
-    // Inicjalizacja pustej struktury, jeśli plik główny jest pusty
+    // Jeśli plik główny jest pusty, zainicjuj strukturę
     if (primaryFile->getFileSize(sizeof(Page)) == 0) {
-        Logger::log_verbose("Initializing empty ISAM structure...\n");
-        Page rootPage;
-        primaryFile->writePage(0, rootPage);
-        
-        // Indeks początkowy: Klucz 0 wskazuje na Stronę 0
-        std::vector<IndexEntry> idx;
-        idx.push_back({0, 0});
-        saveIndex(idx);
+        initStructure();
     }
 }
 
@@ -35,21 +28,55 @@ ISAM::~ISAM() {
     delete indexFile;
 }
 
+void ISAM::initStructure() {
+    Logger::log_verbose("Initializing empty ISAM structure...\n");
+    
+    // Czyścimy/Tworzymy pliki
+    primaryFile->clear();
+    overflowFile->clear();
+    indexFile->clear();
+
+    // Tworzymy pierwszą pustą stronę
+    Page rootPage;
+    primaryFile->writePage(0, rootPage);
+    
+    // Indeks początkowy: Klucz 0 wskazuje na Stronę 0
+    std::vector<IndexEntry> idx;
+    idx.push_back({0, 0});
+    saveIndex(idx);
+}
+
+void ISAM::clearDatabase() {
+    Logger::log("Clearing database files...\n");
+    
+    // Zamknij uchwyty do plików
+    primaryFile->close();
+    overflowFile->close();
+    indexFile->close();
+
+    // Usuń pliki fizyczne
+    std::remove((filenamePrefix + "_primary.bin").c_str());
+    std::remove((filenamePrefix + "_overflow.bin").c_str());
+    std::remove((filenamePrefix + "_index.bin").c_str());
+
+    // Otwórz na nowo (stworzy puste pliki)
+    primaryFile->open();
+    overflowFile->open();
+    indexFile->open();
+
+    // Zainicjuj strukturę (strona 0 i indeks)
+    initStructure();
+}
+
 // ==========================================
-// Zarządzanie Indeksem (Index File)
+// Reszta metod pomocniczych (bez zmian)
 // ==========================================
+// (saveIndex, loadIndex, findPrimaryPageIndex, addToOverflow - skopiuj z poprzedniej wersji)
+// ...
 
 void ISAM::saveIndex(const std::vector<IndexEntry>& index) {
-    // Czyścimy plik indeksu i zapisujemy wektor
     indexFile->clear();
-    // Używamy "brutalnej" metody zapisu binarnego wektora
     if (index.empty()) return;
-    
-    // Hack: DiskManager jest generyczny, ale tutaj musimy zapisać tablicę struktur
-    // Otwieramy plik "ręcznie" przez fstream wewnątrz DiskManager lub (bezpieczniej)
-    // dodajemy metodę do DiskManager. Tutaj założymy, że indexFile->file jest dostępny
-    // lub użyjemy standardowego fstreamu, bo indeks jest mały.
-    
     std::ofstream out(indexFile->getFilename(), std::ios::binary | std::ios::trunc);
     out.write(reinterpret_cast<const char*>(index.data()), index.size() * sizeof(IndexEntry));
     out.close();
@@ -58,14 +85,10 @@ void ISAM::saveIndex(const std::vector<IndexEntry>& index) {
 std::vector<IndexEntry> ISAM::loadIndex() {
     std::vector<IndexEntry> index;
     std::ifstream in(indexFile->getFilename(), std::ios::binary);
-    
     if (!in.is_open()) return index;
-
-    // Pobierz rozmiar pliku
     in.seekg(0, std::ios::end);
     size_t fileSize = in.tellg();
     in.seekg(0, std::ios::beg);
-
     if (fileSize > 0) {
         size_t count = fileSize / sizeof(IndexEntry);
         index.resize(count);
@@ -78,32 +101,20 @@ std::vector<IndexEntry> ISAM::loadIndex() {
 int ISAM::findPrimaryPageIndex(uint32_t key) {
     std::vector<IndexEntry> index = loadIndex();
     if (index.empty()) return 0;
-
     int targetPage = 0;
-    // Indeks rzadki: szukamy ostatniego wpisu, którego klucz <= szukany klucz
     for (const auto& entry : index) {
-        if (entry.key <= key) {
-            targetPage = entry.pageIndex;
-        } else {
-            // Skoro lista jest posortowana, a trafiliśmy na większy klucz,
-            // to znaczy, że szukany rekord musi być na poprzedniej stronie (targetPage)
-            break; 
-        }
+        if (entry.key <= key) targetPage = entry.pageIndex;
+        else break; 
     }
     return targetPage;
 }
 
 // ==========================================
-// Operacje CRUD
+// Operacje CRUD (Zmodyfikowany insertRecord)
 // ==========================================
 
 bool ISAM::insertRecord(uint32_t key, uint32_t data) {
-    // KROK 1: Sprawdzenie unikalności klucza
-    // Jeśli rekord istnieje, zwracamy false (bez logowania błędu tutaj,
-    // aby nie śmiecić przy losowym generowaniu)
-    if (readRecord(key) != nullptr) {
-        return false; 
-    }
+    if (readRecord(key) != nullptr) return false; 
 
     Record newRec(key, data);
     int pageIdx = findPrimaryPageIndex(key);
@@ -114,77 +125,74 @@ bool ISAM::insertRecord(uint32_t key, uint32_t data) {
         return false;
     }
 
-    // 1. Próba wstawienia na stronę główną
     if (page.recordCount < RECORDS_PER_PAGE) {
         if (page.insertRecord(newRec)) {
             primaryFile->writePage(pageIdx, page);
         } else {
-             // Teoretycznie niemożliwe przy sprawdzeniu recordCount, ale dla spójności
              addToOverflow(pageIdx, page, newRec);
         }
     } else {
-        // 2. Strona pełna -> wstaw do Overflow
         addToOverflow(pageIdx, page, newRec);
     }
     
-    return true; // Sukces
+    // --- AUTOMATYCZNA REORGANIZACJA ---
+    // Sprawdzamy warunek V/N > threshold
+    // N (Primary Records) przybliżamy jako liczbę stron * pojemność (dla uproszczenia)
+    // lub dokładnie iterując (kosztowne). 
+    // Użyjemy rozmiaru plików jako prostej metryki.
+    
+    int primaryPages = primaryFile->getFileSize(sizeof(Page));
+    // Liczba rekordów w overflow:
+    int overflowRecords = overflowFile->getFileSize(sizeof(Record));
+    
+    // Szacowana liczba rekordów w primary (zakładając pełne wypełnienie alpha po reorgu)
+    // Możemy po prostu odnieść się do liczby miejsc na stronach:
+    int primaryCapacity = primaryPages * RECORDS_PER_PAGE; 
+    
+    // Aby uniknąć reorganizacji przy bardzo małych plikach (np. 1 rekord w ov, 4 w prim),
+    // dodajemy warunek minimalnej liczby rekordów w overflow (np. > 5).
+    if (primaryCapacity > 0 && overflowRecords > 5) {
+        double currentRatio = (double)overflowRecords / (double)primaryCapacity;
+        
+        if (currentRatio >= reorgThreshold) {
+            Logger::log_verbose("[Auto-Reorg] Ratio %.2f >= %.2f. Triggering...\n", currentRatio, reorgThreshold);
+            reorganize();
+        }
+    }
+
+    return true; 
 }
 
+// (addToOverflow, readRecord, updateRecord, deleteRecord - BEZ ZMIAN z poprzedniej wersji)
+// ...
 void ISAM::addToOverflow(int pageIdx, Page& page, Record newRec) {
-    // Logger::log_verbose("Page full. Inserting into Overflow.\n");
-
-    // Zapisz nowy rekord na końcu pliku Overflow
     int newRecAddr = overflowFile->appendRecord(newRec);
-    
-    // Przypadek A: Łańcuch jest pusty
     if (page.overflowPointer == NULL_POINTER) {
         page.overflowPointer = newRecAddr;
         primaryFile->writePage(pageIdx, page);
         return;
     }
-
-    // Przypadek B: Wstawianie na początek łańcucha (newKey < firstOverflowKey)
     Record headRec;
     overflowFile->readRecord(page.overflowPointer, headRec);
-    
     if (newRec.key < headRec.key) {
-        // Nowy rekord staje się głową łańcucha
         newRec.nextPointer = page.overflowPointer;
-        overflowFile->writeRecord(newRecAddr, newRec); // Nadpisz go z nowym pointerem
-        
-        page.overflowPointer = newRecAddr; // Aktualizuj wskaźnik na stronie
+        overflowFile->writeRecord(newRecAddr, newRec);
+        page.overflowPointer = newRecAddr; 
         primaryFile->writePage(pageIdx, page);
         return;
     }
-
-    // Przypadek C: Wstawianie w środek lub na koniec łańcucha
     int currentAddr = page.overflowPointer;
     int prevAddr = -1;
     Record currentRec;
-
-    // Iterujemy po łańcuchu szukając miejsca
     while (currentAddr != NULL_POINTER) {
         overflowFile->readRecord(currentAddr, currentRec);
-        
-        if (currentRec.key > newRec.key) {
-            // Znaleźliśmy element większy, wstawiamy PRZED nim
-            break; 
-        }
-        
+        if (currentRec.key > newRec.key) break; 
         prevAddr = currentAddr;
         currentAddr = currentRec.nextPointer;
     }
-
-    // W tym momencie: prevAddr wskazuje na element mniejszy od nowego,
-    // a currentAddr na element większy (lub NULL).
-    // Wstawiamy POMIĘDZY prevAddr a currentAddr.
-    
     if (prevAddr != -1) {
-        // 1. Nowy wskazuje na current
         newRec.nextPointer = currentAddr;
         overflowFile->writeRecord(newRecAddr, newRec);
-        
-        // 2. Poprzedni wskazuje na nowy
         Record prevRec;
         overflowFile->readRecord(prevAddr, prevRec);
         prevRec.nextPointer = newRecAddr;
@@ -194,47 +202,26 @@ void ISAM::addToOverflow(int pageIdx, Page& page, Record newRec) {
 
 Record* ISAM::readRecord(uint32_t key) {
     int pageIdx = findPrimaryPageIndex(key);
-    static Record resultRec; // static dla bezpieczeństwa zwracania wskaźnika
-    
+    static Record resultRec; 
     Page page;
     if (!primaryFile->readPage(pageIdx, page)) return nullptr;
-
-    // 1. Sprawdź rekordy na stronie głównej
     Record* foundOnPage = page.findRecord(key);
     if (foundOnPage) {
         resultRec = *foundOnPage;
         return &resultRec;
     }
-
-    // 2. Jeśli nie znaleziono i klucz jest większy od największego na stronie (lub strona pełna),
-    // sprawdź Overflow.
-    // Uwaga: Nawet jak klucz jest mniejszy, w ISAM rekord może być w overflow jeśli
-    // został wypchnięty lub wstawiony gdy strona była pełna w dziwny sposób.
-    // Ale w naszej implementacji Primary jest zawsze posortowane, a Overflow dopięty.
-    
     int nextAddr = page.overflowPointer;
     while (nextAddr != NULL_POINTER) {
         overflowFile->readRecord(nextAddr, resultRec);
-        
-        if (!resultRec.isDeleted && resultRec.key == key) {
-            return &resultRec;
-        }
-        // Optymalizacja: łańcuch overflow też jest posortowany rosnąco.
+        if (!resultRec.isDeleted && resultRec.key == key) return &resultRec;
         if (resultRec.key > key) return nullptr; 
-        
         nextAddr = resultRec.nextPointer;
     }
-
     return nullptr;
 }
 
 void ISAM::updateRecord(uint32_t key, uint32_t newData) {
-    Record* rec = readRecord(key);
-    if (rec) {
-        // Jeśli aktualizujemy tylko dane (timestamp), a klucz bez zmian:
-        // Musimy znaleźć GDZIE on jest fizycznie i go nadpisać.
-        // To wymagałoby zwracania adresu przez readRecord.
-        // Uproszczenie: Delete + Insert
+    if (readRecord(key)) {
         deleteRecord(key);
         insertRecord(key, newData);
         Logger::log("Updated record %d.\n", key);
@@ -247,17 +234,12 @@ bool ISAM::deleteRecord(uint32_t key) {
     int pageIdx = findPrimaryPageIndex(key);
     Page page;
     if (!primaryFile->readPage(pageIdx, page)) return false;
-
-    // 1. Próba usunięcia ze strony głównej
     if (page.deleteRecord(key)) {
         primaryFile->writePage(pageIdx, page);
         return true;
     }
-
-    // 2. Próba usunięcia z Overflow
     int currentAddr = page.overflowPointer;
     Record rec;
-    
     while (currentAddr != NULL_POINTER) {
         overflowFile->readRecord(currentAddr, rec);
         if (rec.key == key && !rec.isDeleted) {
@@ -268,131 +250,100 @@ bool ISAM::deleteRecord(uint32_t key) {
         if (rec.key > key) return false;
         currentAddr = rec.nextPointer;
     }
-
     return false;
 }
 
 // ==========================================
-// Reorganizacja
+// Reorganizacja (Bez zmian, tylko używa metod pomocniczych)
 // ==========================================
 
 void ISAM::reorganize() {
-    Logger::log("\n=== Starting Reorganization (Alpha: %.2f) ===\n", alpha);
+    Logger::log("\n=== Reorganization (Alpha: %.2f) ===\n", alpha);
     
-    // 1. Pliki tymczasowe
     std::string newPrimName = filenamePrefix + "_new_prim.bin";
     std::string newOverName = filenamePrefix + "_new_over.bin";
-    std::string newIndxName = filenamePrefix + "_new_indx.bin"; // Tylko nazwa, zapiszemy na końcu
 
     DiskManager newPrimary(newPrimName);
     newPrimary.clear();
-    DiskManager newOverflow(newOverName); // Będzie pusty na początku
+    DiskManager newOverflow(newOverName);
     newOverflow.clear();
 
     std::vector<IndexEntry> newIndex;
-    
-    // Bufory do nowego pliku
     Page newPage;
     int newPageIndex = 0;
     int recordsOnCurrentPage = 0;
     int limitPerPage = (int)(RECORDS_PER_PAGE * alpha);
     if (limitPerPage < 1) limitPerPage = 1;
 
-    // 2. Iteracja logiczna po STARYM pliku (In-Order Traversal)
     int totalPages = primaryFile->getFileSize(sizeof(Page));
-    
-    // Dodaj wpis do indeksu dla pierwszej strony
     bool isFirstRecordOnPage = true;
 
     for (int i = 0; i < totalPages; ++i) {
         Page oldPage;
         primaryFile->readPage(i, oldPage);
-
-        // Zbierz wszystkie rekordy z tej strony i jej łańcucha overflow
         std::vector<Record> recordsToProcess;
         
-        // a) Rekordy ze strony głównej
         for (int k = 0; k < RECORDS_PER_PAGE; k++) {
             if (k < oldPage.recordCount && !oldPage.records[k].isDeleted) {
                 recordsToProcess.push_back(oldPage.records[k]);
             }
         }
-        
-        // b) Rekordy z Overflow
         int ovPtr = oldPage.overflowPointer;
         while (ovPtr != NULL_POINTER) {
             Record ovRec;
             overflowFile->readRecord(ovPtr, ovRec);
-            if (!ovRec.isDeleted) {
-                recordsToProcess.push_back(ovRec);
-            }
+            if (!ovRec.isDeleted) recordsToProcess.push_back(ovRec);
             ovPtr = ovRec.nextPointer;
         }
 
         std::sort(recordsToProcess.begin(), recordsToProcess.end());
 
-        // c) Wstawiaj je do NOWEJ struktury
         for (auto& r : recordsToProcess) {
-            // Resetuj wskaźniki (w nowym pliku głównym nie ma overflow na start)
             r.nextPointer = NULL_POINTER;
-            
-            // Jeśli to pierwszy rekord na nowej stronie, zaktualizuj indeks
             if (isFirstRecordOnPage) {
                 newIndex.push_back({r.key, newPageIndex});
                 isFirstRecordOnPage = false;
             }
-
             newPage.insertRecord(r);
             recordsOnCurrentPage++;
 
-            // Jeśli osiągnięto limit alfa, zapisz stronę i zacznij nową
             if (recordsOnCurrentPage >= limitPerPage) {
                 newPrimary.writePage(newPageIndex, newPage);
-                
                 newPageIndex++;
-                newPage = Page(); // Reset
+                newPage = Page();
                 recordsOnCurrentPage = 0;
                 isFirstRecordOnPage = true;
             }
         }
     }
 
-    // Zapisz ostatnią stronę, jeśli nie jest pusta
     if (recordsOnCurrentPage > 0) {
         newPrimary.writePage(newPageIndex, newPage);
     }
 
-    // 3. Zamknij i podmień pliki
     primaryFile->close();
     overflowFile->close();
     indexFile->close();
     newPrimary.close();
     newOverflow.close();
 
-    // Usuń stare
     std::remove((filenamePrefix + "_primary.bin").c_str());
     std::remove((filenamePrefix + "_overflow.bin").c_str());
     std::remove((filenamePrefix + "_index.bin").c_str());
 
-    // Zmień nazwy nowych
     std::rename(newPrimName.c_str(), (filenamePrefix + "_primary.bin").c_str());
     std::rename(newOverName.c_str(), (filenamePrefix + "_overflow.bin").c_str());
 
-    // Otwórz ponownie główne menedżery
     primaryFile->open();
     overflowFile->open();
     indexFile->open();
 
-    // Zapisz nowy indeks
     saveIndex(newIndex);
     
-    Logger::log("Reorganization complete. New Primary Pages: %d\n", newPageIndex + 1);
+    Logger::log("Reorg complete. Pages: %d. Overflow cleared.\n", newPageIndex + 1);
 }
 
-// ==========================================
-// Debug / Wyświetlanie
-// ==========================================
-
+// (Display i Browse - bez zmian)
 void ISAM::display() {
     int numPages = primaryFile->getFileSize(sizeof(Page));
     std::vector<IndexEntry> idx = loadIndex();
@@ -405,11 +356,8 @@ void ISAM::display() {
     for (int i = 0; i < numPages; ++i) {
         Page p;
         if(!primaryFile->readPage(i, p)) break;
-        
         Logger::log("Page %2d: ", i);
-        p.print(); // zakłada użycie std::cout, można przerobić na Logger
-        
-        // Wyświetl łańcuch overflow
+        p.print();
         int ov = p.overflowPointer;
         if (ov != NULL_POINTER) {
             Logger::log("        `-> OVERFLOW: ");
@@ -429,25 +377,13 @@ void ISAM::display() {
 }
 
 void ISAM::browse() {
-    // Proste przejście sekwencyjne logiczne (zgodnie z zadaniem)
-    // To jest to samo co pętla w Reorganizacji, tylko wyświetla dane
     Logger::log("Browsing file sequentially:\n");
     int numPages = primaryFile->getFileSize(sizeof(Page));
-    
     for(int i=0; i<numPages; i++) {
         Page p;
         primaryFile->readPage(i, p);
-        
-        // Scalanie (merge) rekordów ze strony i overflow w locie dla wyświetlenia
-        // Ponieważ oba zbiory (tablica na stronie i lista overflow) są posortowane,
-        // można by to zrobić ładnie. Tu zrobimy prościej: strona -> overflow (bo overflow wstawiamy "pomiędzy" logicznie, ale w ISAM v1 overflow to często "nadmiar")
-        // UWAGA: W poprawnym ISAM overflow pointer dotyczy rekordów WIĘKSZYCH niż ostatni na stronie
-        // LUB (w naszej implementacji) wstawiamy rekordy tam gdzie pasują.
-        // Wyświetlę po prostu posortowaną listę wszystkich połączonych.
-        
         std::vector<Record> allRecs;
         for(int k=0; k<p.recordCount; k++) if(!p.records[k].isDeleted) allRecs.push_back(p.records[k]);
-        
         int ov = p.overflowPointer;
         while(ov != -1) {
             Record r;
@@ -455,9 +391,7 @@ void ISAM::browse() {
             if(!r.isDeleted) allRecs.push_back(r);
             ov = r.nextPointer;
         }
-        
         std::sort(allRecs.begin(), allRecs.end());
-        
         for(auto& r : allRecs) {
             Logger::log("%u: %u, ", r.key, r.timestamp);
         }

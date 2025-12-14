@@ -17,7 +17,8 @@ void print_menu() {
               << "  d <key>        : Delete record\n"
               << "  p              : Print structure (pages & overflow)\n"
               << "  b              : Browse all records sequentially\n"
-              << "  x              : Reorganize file\n"
+              << "  x              : Force Reorganize\n"
+              << "  c              : Clear/Reset database\n"
               << "  rnd <N>        : Insert N random records\n"
               << "  q              : Quit\n"
               << "> ";
@@ -28,6 +29,7 @@ int main(int argc, char* argv[]) {
     std::string filenamePrefix = DEFAULT_FILENAME_PREFIX;
     std::string loadFromFile = "";
     double alpha = 0.5;
+    double threshold = 0.2; // Domyślny próg reorganizacji
     bool verbose = false;
 
     static struct option long_opts[] = {
@@ -35,31 +37,35 @@ int main(int argc, char* argv[]) {
         {"file",        required_argument,  0,  'f'},
         {"load",        required_argument,  0,  'l'},
         {"alpha",       required_argument,  0,  'a'},
+        {"threshold",   required_argument,  0,  't'}, // Nowa opcja
         {"verbose",     no_argument,        0,  'v'},
         {0, 0, 0, 0}
     };
 
-    while ((opt = getopt_long(argc, argv, "hf:l:a:v", long_opts, nullptr)) != -1) {
+    while ((opt = getopt_long(argc, argv, "hf:l:a:t:v", long_opts, nullptr)) != -1) {
         switch (opt) {
             case 'h':
                 std::cout << "Usage: isam [OPTIONS]\n"
                           << "  -f, --file PREF   Set filename prefix (default: database)\n"
                           << "  -l, --load FILE   Load initial data from text file (key data)\n"
                           << "  -a, --alpha VAL   Set alpha factor for reorganization (default: 0.5)\n"
+                          << "  -t, --threshold VAL Set overflow/primary ratio trigger (default: 0.2)\n"
                           << "  -v, --verbose     Enable verbose logging\n";
                 return 0;
             case 'f': filenamePrefix = optarg; break;
             case 'l': loadFromFile = optarg; break;
             case 'a': alpha = std::stod(optarg); break;
+            case 't': threshold = std::stod(optarg); break;
             case 'v': verbose = true; break;
             default: return 1;
         }
     }
 
     Logger::verbose = verbose;
-    Logger::log("Initializing ISAM on files: %s_*.bin\n", filenamePrefix.c_str());
+    Logger::log("Initializing ISAM. Prefix: %s, Alpha: %.2f, ReorgThreshold: %.2f\n", 
+                filenamePrefix.c_str(), alpha, threshold);
 
-    ISAM isam(filenamePrefix, alpha);
+    ISAM isam(filenamePrefix, alpha, threshold);
 
     // Opcjonalne ładowanie z pliku na start
     if (!loadFromFile.empty()) {
@@ -97,14 +103,13 @@ int main(int argc, char* argv[]) {
         else if (cmd == "i") {
             uint32_t k, d;
             if (ss >> k >> d) {
-                // Teraz sprawdzamy wynik operacji
                 if (isam.insertRecord(k, d)) {
                     Logger::log("Inserted. Disk Ops: R=%d W=%d\n", DiskManager::diskReads, DiskManager::diskWrites);
                 } else {
                     std::cout << "Error: Key " << k << " already exists!\n";
                 }
             } else std::cout << "Usage: i <key> <data>\n";
-        }
+        } 
         else if (cmd == "r") {
             uint32_t k;
             if (ss >> k) {
@@ -139,25 +144,33 @@ int main(int argc, char* argv[]) {
             isam.reorganize();
             Logger::log("Disk Ops (Reorg): R=%d W=%d\n", DiskManager::diskReads, DiskManager::diskWrites);
         }
+        else if (cmd == "c") {
+            isam.clearDatabase();
+            Logger::log("Database cleared.\n");
+        }
         else if (cmd == "rnd") {
             int n;
             if (ss >> n) {
                 std::mt19937 rng(std::random_device{}());
-                std::uniform_int_distribution<uint32_t> distKey(1, 100); // Mały zakres wymusi kolizje
-                std::uniform_int_distribution<uint32_t> distData(1, 100);
+                std::uniform_int_distribution<uint32_t> distKey(1, n * 10); 
+                std::uniform_int_distribution<uint32_t> distData(1, 9999);
                 
                 std::cout << "Inserting " << n << " unique random records...\n";
                 
                 int insertedCount = 0;
-                // Pętla wykonuje się dopóki nie wstawimy n UNIKALNYCH rekordów
+                
                 while (insertedCount < n) {
                     uint32_t k = distKey(rng);
                     uint32_t d = distData(rng);
                     
-                    // Jeśli insert zwróci true, zwiększamy licznik.
-                    // Jeśli false (duplikat), pętla kręci się dalej z nowym losowaniem.
+                    int readsBefore = DiskManager::diskReads;
+                    int writesBefore = DiskManager::diskWrites;
+
                     if (isam.insertRecord(k, d)) {
                         insertedCount++;
+                    } else {
+                        DiskManager::diskReads = readsBefore;
+                        DiskManager::diskWrites = writesBefore;
                     }
                 }
                 

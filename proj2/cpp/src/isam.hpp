@@ -15,20 +15,24 @@ private:
     DiskManager* overflowFile;
     DiskManager* indexFile;
     
-    // Dodane brakujące pole:
     std::string filenamePrefix;
-    
-    // Parametr alpha dla reorganizacji (np. 0.5)
     double alpha;
+    
+    // NOWE: Próg reorganizacji (stosunek V/N)
+    double reorgThreshold; 
 
     // Pomocnicze metody prywatne
     int findPrimaryPageIndex(uint32_t key);
     void addToOverflow(int pageIndex, Page& page, Record newRecord);
     void saveIndex(const std::vector<IndexEntry>& index);
     std::vector<IndexEntry> loadIndex();
+    
+    // NOWE: Metoda inicjująca pustą strukturę (wywoływana w konstruktorze i po clear)
+    void initStructure();
 
 public:
-    ISAM(std::string prefix, double alphaVal = 0.5);
+    // Zaktualizowany konstruktor o parametr threshold
+    ISAM(std::string prefix, double alphaVal = 0.5, double reorgThresh = 0.2);
     ~ISAM();
 
     // Operacje CRUD
@@ -39,8 +43,9 @@ public:
 
     // Zarządzanie strukturą
     void reorganize();
-    void display(); // Wyświetlanie struktury stron (debug)
+    void display();
+    void browse();
     
-    // Dodana brakująca deklaracja:
-    void browse();  // Sekwencyjny przegląd rekordów
+    // NOWE: Usuwanie bazy danych
+    void clearDatabase();
 };
