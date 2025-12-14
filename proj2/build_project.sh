@@ -20,7 +20,7 @@ cd ..
 
 python3 Python/generate_charts.py
 
-# Wróć do głównego katalogu i skompiluj sprawozdanie w LaTeX
+# # Wróć do głównego katalogu i skompiluj sprawozdanie w LaTeX
 
 cd LaTeX
 pdflatex sprawozdanie.tex

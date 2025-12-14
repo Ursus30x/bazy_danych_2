@@ -87,9 +87,10 @@ int main(int argc, char* argv[]) {
         DiskManager::diskReads = 0;
         DiskManager::diskWrites = 0;
 
+        // ... (wewnątrz pętli while, obsługa komendy 'q') ...
+
         if (cmd == "q") {
-            // Wypisanie statystyk w formacie CSV-like dla łatwego parsowania
-            // Format: STATS alpha threshold reorgs inserts searches reads writes
+            // Format: STATS alpha threshold reorgs inserts searches total_reads total_writes reorg_reads reorg_writes
             std::cout << "STATS " 
                       << alpha << " " 
                       << threshold << " "
@@ -97,9 +98,12 @@ int main(int argc, char* argv[]) {
                       << Stats::totalInserts << " "
                       << Stats::totalSearches << " "
                       << Stats::totalReads << " "
-                      << Stats::totalWrites << std::endl;
+                      << Stats::totalWrites << " "
+                      << Stats::totalReorgReads << " "   // <--- NOWE
+                      << Stats::totalReorgWrites         // <--- NOWE
+                      << std::endl;
             break;
-        } 
+        }
         else if (cmd == "i") {
             uint32_t k, d;
             if (ss >> k >> d) {

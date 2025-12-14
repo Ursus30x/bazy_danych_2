@@ -254,6 +254,11 @@ void ISAM::reorganize() {
     Logger::log("\n=== Reorganization (Alpha: %.2f) ===\n", alpha);
     Stats::totalReorgs++; 
 
+    // --- POMIAR KOSZTU REORGANIZACJI (START) ---
+    // Zapamiętujemy stan liczników przed rozpoczęciem "sprzątania"
+    int readsStart = DiskManager::diskReads;
+    int writesStart = DiskManager::diskWrites;
+
     std::string newPrimName = filenamePrefix + "_new_prim.bin";
     std::string newOverName = filenamePrefix + "_new_over.bin";
 
@@ -337,6 +342,14 @@ void ISAM::reorganize() {
     indexFile->open();
 
     saveIndex(newIndex);
+    
+    // --- POMIAR KOSZTU REORGANIZACJI (KONIEC) ---
+    // Obliczamy różnicę i dodajemy do dedykowanych statystyk
+    int readsEnd = DiskManager::diskReads;
+    int writesEnd = DiskManager::diskWrites;
+    
+    Stats::totalReorgReads += (long long)(readsEnd - readsStart);
+    Stats::totalReorgWrites += (long long)(writesEnd - writesStart);
     
     Logger::log("Reorg complete. Pages: %d. Overflow cleared.\n", newPageIndex + 1);
 }
