@@ -1,5 +1,6 @@
 #include "isam.hpp"
 #include "logger.hpp"
+#include "stats.hpp"
 #include <iostream>
 #include <algorithm>
 #include <vector>
@@ -251,7 +252,8 @@ bool ISAM::deleteRecord(uint32_t key) {
 
 void ISAM::reorganize() {
     Logger::log("\n=== Reorganization (Alpha: %.2f) ===\n", alpha);
-    
+    Stats::totalReorgs++; 
+
     std::string newPrimName = filenamePrefix + "_new_prim.bin";
     std::string newOverName = filenamePrefix + "_new_over.bin";
 
