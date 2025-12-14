@@ -17,7 +17,7 @@ ISAM::ISAM(std::string prefix, double alphaVal, double reorgThresh)
     indexFile = new DiskManager(prefix + "_index.bin");
 
     // Jeśli plik główny jest pusty, zainicjuj strukturę
-    if (primaryFile->getFileSize(sizeof(Page)) == 0) {
+    if (primaryFile->getFileSize(getPageOnDiskSize()) == 0) {
         initStructure();
     }
 }
@@ -141,7 +141,7 @@ bool ISAM::insertRecord(uint32_t key, uint32_t data) {
     // lub dokładnie iterując (kosztowne). 
     // Użyjemy rozmiaru plików jako prostej metryki.
     
-    int primaryPages = primaryFile->getFileSize(sizeof(Page));
+    int primaryPages = primaryFile->getFileSize(getPageOnDiskSize());
     // Liczba rekordów w overflow:
     int overflowRecords = overflowFile->getFileSize(sizeof(Record));
     
@@ -275,7 +275,7 @@ void ISAM::reorganize() {
     int limitPerPage = (int)(RECORDS_PER_PAGE * alpha);
     if (limitPerPage < 1) limitPerPage = 1;
 
-    int totalPages = primaryFile->getFileSize(sizeof(Page));
+    int totalPages = primaryFile->getFileSize(getPageOnDiskSize());
     bool isFirstRecordOnPage = true;
 
     for (int i = 0; i < totalPages; ++i) {
@@ -345,7 +345,7 @@ void ISAM::reorganize() {
 
 // (Display i Browse - bez zmian)
 void ISAM::display() {
-    int numPages = primaryFile->getFileSize(sizeof(Page));
+    int numPages = primaryFile->getFileSize(getPageOnDiskSize());
     std::vector<IndexEntry> idx = loadIndex();
 
     Logger::log("\n=== ISAM STRUCTURE (Alpha: %.2f) ===\n", alpha);
@@ -378,7 +378,7 @@ void ISAM::display() {
 
 void ISAM::browse() {
     Logger::log("Browsing file sequentially:\n");
-    int numPages = primaryFile->getFileSize(sizeof(Page));
+    int numPages = primaryFile->getFileSize(getPageOnDiskSize());
     for(int i=0; i<numPages; i++) {
         Page p;
         primaryFile->readPage(i, p);

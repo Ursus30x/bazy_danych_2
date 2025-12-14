@@ -1,24 +1,22 @@
-// page.hpp
 #pragma once
 #include "record.hpp"
+#include <vector>
 
-// Stała b=4 z instrukcji
-const int RECORDS_PER_PAGE = 4;
+// Zmienna globalna zamiast stałej (definicja w main.cpp)
+extern int RECORDS_PER_PAGE;
+
+// Funkcja pomocnicza zwracająca rozmiar strony na dysku w bajtach
+size_t getPageOnDiskSize();
 
 struct Page {
-    Record records[RECORDS_PER_PAGE];
-    int recordCount;         // Aktualna liczba rekordów na stronie
-    int32_t overflowPointer; // Wskaźnik na początek łańcucha w Overflow Area (dla tej strony)
+    std::vector<Record> records; // Wektor zamiast tablicy statycznej
+    int recordCount;         
+    int32_t overflowPointer; 
 
     Page();
     
-    // Wstawia rekord na stronę zachowując porządek. Zwraca true jeśli się udało.
     bool insertRecord(const Record& rec);
-    
-    // Szuka rekordu na stronie. Zwraca wskaźnik lub nullptr.
     Record* findRecord(uint32_t key);
-    
-    // Usuwa logicznie rekord
     bool deleteRecord(uint32_t key);
 
     void print() const;
