@@ -28,7 +28,8 @@ void DiskManager::clear() {
     open();
 }
 
-// ZMIANA: Ręczna serializacja strony
+// === OBSŁUGA STRON DANYCH (PRIMARY) ===
+
 void DiskManager::writePage(int pageIndex, const Page& page) {
     if (!file.is_open()) open();
     file.clear();
@@ -41,14 +42,13 @@ void DiskManager::writePage(int pageIndex, const Page& page) {
     file.write(reinterpret_cast<const char*>(&page.overflowPointer), sizeof(int32_t));
     
     // 2. Zapisz tablicę rekordów (dane wektora)
-    // Zakładamy, że vector jest zawsze zresize'owany do RECORDS_PER_PAGE w konstruktorze Page
+    // Zakładamy, że vector jest zawsze zresize'owany do RECORDS_PER_PAGE
     file.write(reinterpret_cast<const char*>(page.records.data()), RECORDS_PER_PAGE * sizeof(Record));
     
     file.flush();
     diskWrites++;
 }
 
-// ZMIANA: Ręczna deserializacja strony
 bool DiskManager::readPage(int pageIndex, Page& page) {
     if (!file.is_open()) open();
     file.clear();
@@ -56,11 +56,9 @@ bool DiskManager::readPage(int pageIndex, Page& page) {
     size_t pSize = getPageOnDiskSize();
     file.seekg(pageIndex * pSize, std::ios::beg);
     
-    // 1. Czytaj nagłówki
     if (file.read(reinterpret_cast<char*>(&page.recordCount), sizeof(int))) {
         file.read(reinterpret_cast<char*>(&page.overflowPointer), sizeof(int32_t));
         
-        // 2. Przygotuj wektor i wczytaj dane
         page.records.resize(RECORDS_PER_PAGE);
         file.read(reinterpret_cast<char*>(page.records.data()), RECORDS_PER_PAGE * sizeof(Record));
         
@@ -70,7 +68,41 @@ bool DiskManager::readPage(int pageIndex, Page& page) {
     return false;
 }
 
-// Metody dla Rekordów (Overflow) pozostają bez zmian, bo Record jest POD
+// === OBSŁUGA STRON INDEKSU (NOWE) ===
+
+void DiskManager::writeIndexPage(int pageIndex, const IndexPage& page) {
+    if (!file.is_open()) open();
+    file.clear();
+    
+    // Rozmiar strony indeksu na dysku
+    size_t size = sizeof(int) + (INDEX_ENTRIES_PER_PAGE * sizeof(IndexEntry));
+    
+    file.seekp(pageIndex * size, std::ios::beg);
+    
+    file.write(reinterpret_cast<const char*>(&page.count), sizeof(int));
+    file.write(reinterpret_cast<const char*>(page.entries), INDEX_ENTRIES_PER_PAGE * sizeof(IndexEntry));
+    
+    file.flush();
+    diskWrites++;
+}
+
+bool DiskManager::readIndexPage(int pageIndex, IndexPage& page) {
+    if (!file.is_open()) open();
+    file.clear();
+    
+    size_t size = sizeof(int) + (INDEX_ENTRIES_PER_PAGE * sizeof(IndexEntry));
+    file.seekg(pageIndex * size, std::ios::beg);
+    
+    if (file.read(reinterpret_cast<char*>(&page.count), sizeof(int))) {
+        file.read(reinterpret_cast<char*>(page.entries), INDEX_ENTRIES_PER_PAGE * sizeof(IndexEntry));
+        diskReads++;
+        return true;
+    }
+    return false;
+}
+
+// === OBSŁUGA REKORDÓW (OVERFLOW) ===
+
 void DiskManager::writeRecord(int recordIndex, const Record& rec) {
     if (!file.is_open()) open();
     file.clear();
@@ -105,6 +137,6 @@ int DiskManager::getFileSize(size_t elementSize) {
     file.clear();
     file.seekg(0, std::ios::end);
     size_t size = file.tellg();
-    if (elementSize == 0) return 0; // Zabezpieczenie
+    if (elementSize == 0) return 0;
     return (int)(size / elementSize);
 }

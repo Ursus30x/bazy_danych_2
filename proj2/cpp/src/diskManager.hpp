@@ -5,6 +5,22 @@
 #include "page.hpp"
 #include "record.hpp"
 
+// Struktura wpisu w indeksie (Klucz -> Numer Strony)
+// Przeniesiona tutaj, aby DiskManager mógł z niej korzystać
+struct IndexEntry {
+    uint32_t key;
+    int pageIndex;
+};
+
+// Stała określająca ile wpisów indeksu mieści się na jednej stronie indeksowej
+const int INDEX_ENTRIES_PER_PAGE = 128; 
+
+// Struktura strony indeksu
+struct IndexPage {
+    IndexEntry entries[INDEX_ENTRIES_PER_PAGE];
+    int count = 0;
+};
+
 class DiskManager {
 private:
     std::fstream file;
@@ -22,12 +38,15 @@ public:
     void close();
     void clear(); // Czyści plik (truncate)
 
-    // Dodany brakujący getter:
     std::string getFilename() const { return filename; }
 
-    // Odczyt/Zapis Stron (Primary Area)
+    // Odczyt/Zapis Stron Danych (Primary Area)
     void writePage(int pageIndex, const Page& page);
     bool readPage(int pageIndex, Page& page);
+
+    // Odczyt/Zapis Stron Indeksu (Index Area) - NOWE METODY
+    void writeIndexPage(int pageIndex, const IndexPage& page);
+    bool readIndexPage(int pageIndex, IndexPage& page);
 
     // Odczyt/Zapis Rekordów (Overflow Area)
     void writeRecord(int recordIndex, const Record& rec);
