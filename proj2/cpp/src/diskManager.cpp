@@ -37,12 +37,9 @@ void DiskManager::writePage(int pageIndex, const Page& page) {
     size_t pSize = getPageOnDiskSize();
     file.seekp(pageIndex * pSize, std::ios::beg);
     
-    // 1. Zapisz nagłówki
     file.write(reinterpret_cast<const char*>(&page.recordCount), sizeof(int));
     file.write(reinterpret_cast<const char*>(&page.overflowPointer), sizeof(int32_t));
     
-    // 2. Zapisz tablicę rekordów (dane wektora)
-    // Zakładamy, że vector jest zawsze zresize'owany do RECORDS_PER_PAGE
     file.write(reinterpret_cast<const char*>(page.records.data()), RECORDS_PER_PAGE * sizeof(Record));
     
     file.flush();
